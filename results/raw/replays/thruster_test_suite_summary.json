@@ -1,0 +1,119 @@
+{
+  "schema": "lunarlander-thruster-test-suite/1",
+  "environment": "LunarLander-v3",
+  "physics_backend": "Gymnasium + Box2D",
+  "visualization": "Three.js viewer replays each individual JSON file; this summary is not a replay.",
+  "trained_policy": false,
+  "wind_enabled": false,
+  "test_count": 12,
+  "results": [
+    {
+      "test_key": "no_thrust",
+      "label": "No thrust",
+      "seed": 42,
+      "steps": 83,
+      "episode_return": -137.2652,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_no_thrust_seed42.json"
+    },
+    {
+      "test_key": "left_burst_short",
+      "label": "Left engine short burst",
+      "seed": 42,
+      "steps": 83,
+      "episode_return": -228.5979,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_left_burst_short_seed42.json"
+    },
+    {
+      "test_key": "left_burst_long",
+      "label": "Left engine long burst",
+      "seed": 42,
+      "steps": 80,
+      "episode_return": -543.8288,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_left_burst_long_seed42.json"
+    },
+    {
+      "test_key": "main_burst_short",
+      "label": "Main engine short burst",
+      "seed": 42,
+      "steps": 107,
+      "episode_return": -174.242,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_main_burst_short_seed42.json"
+    },
+    {
+      "test_key": "main_burst_medium",
+      "label": "Main engine medium burst",
+      "seed": 42,
+      "steps": 180,
+      "episode_return": -49.9676,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_main_burst_medium_seed42.json"
+    },
+    {
+      "test_key": "main_burst_long",
+      "label": "Main engine long burst",
+      "seed": 42,
+      "steps": 181,
+      "episode_return": -417.9369,
+      "outcome": "out_of_bounds",
+      "file": "results\\raw\\replays\\thruster_main_burst_long_seed42.json"
+    },
+    {
+      "test_key": "right_burst_short",
+      "label": "Right engine short burst",
+      "seed": 42,
+      "steps": 84,
+      "episode_return": -315.19,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_right_burst_short_seed42.json"
+    },
+    {
+      "test_key": "right_burst_long",
+      "label": "Right engine long burst",
+      "seed": 42,
+      "steps": 82,
+      "episode_return": -620.776,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_right_burst_long_seed42.json"
+    },
+    {
+      "test_key": "alternate_left_right",
+      "label": "Alternating left/right",
+      "seed": 42,
+      "steps": 82,
+      "episode_return": -166.8284,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_alternate_left_right_seed42.json"
+    },
+    {
+      "test_key": "main_then_left",
+      "label": "Main then left",
+      "seed": 42,
+      "steps": 142,
+      "episode_return": -456.4594,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_main_then_left_seed42.json"
+    },
+    {
+      "test_key": "main_then_right",
+      "label": "Main then right",
+      "seed": 42,
+      "steps": 143,
+      "episode_return": -584.3999,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_main_then_right_seed42.json"
+    },
+    {
+      "test_key": "pulse_all_engines",
+      "label": "Pulsed main/left/right",
+      "seed": 42,
+      "steps": 114,
+      "episode_return": -116.5879,
+      "outcome": "crashed",
+      "file": "results\\raw\\replays\\thruster_pulse_all_engines_seed42.json"
+    }
+  ]
+}

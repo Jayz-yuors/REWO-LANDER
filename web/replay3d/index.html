@@ -1,0 +1,1437 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lunar Lander 3D Replay</title>
+
+<!-- Visualization only: Gymnasium LunarLander-v3 2D Box2D trajectories.
+     No physics is simulated here. Serve from project root:
+     python -m http.server 8000 -->
+
+<style>
+html,body{margin:0;height:100%;background:#000;color:#dfe6ee;font:13px/1.4 system-ui,sans-serif;overflow:hidden}
+#c{position:fixed;inset:0}
+.p{position:fixed;background:rgba(10,14,20,.72);border:1px solid #2a3442;border-radius:10px;padding:10px 14px;backdrop-filter:blur(6px)}
+#tel{left:12px;top:12px;min-width:250px;font-variant-numeric:tabular-nums}
+#tel h4{margin:0 0 6px;font-size:11px;letter-spacing:.1em;color:#8fa1b5}
+#tel div{display:flex;justify-content:space-between;gap:16px}
+#tel span:first-child{color:#8fa1b5}
+#top{right:12px;top:12px;max-width:340px;text-align:right}
+#badge{display:inline-block;padding:3px 8px;border-radius:6px;font-weight:600;margin-bottom:6px}
+.random{background:#4a3500;color:#ffc94d;border:1px solid #ffc94d}
+.ppo{background:#0d3b24;color:#5ee69a;border:1px solid #5ee69a}
+#out{font-size:18px;font-weight:700;margin-top:4px}
+#bar{left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;width:min(880px,94vw);box-sizing:border-box}
+button,select{background:#1b2533;color:#dfe6ee;border:1px solid #33425a;border-radius:6px;padding:5px 10px;cursor:pointer}
+button:hover{background:#26344a}
+button.on{background:#2f5d9e}
+button:disabled{opacity:.45;cursor:not-allowed}
+#seek{flex:1;min-width:50px}
+#note{left:12px;bottom:14px;max-width:230px;font-size:11px;color:#8fa1b5}
+.leg{display:inline-block;width:9px;height:9px;border-radius:50%;background:#333;margin-left:4px}
+.leg.on{background:#5ee69a}
+
+/* Database controls only; original 3D visualization styling is unchanged. */
+#episodeSelect{max-width:145px;min-width:90px}
+#loadDb{white-space:nowrap}
+#recordStatus{font-size:11px;color:#8fa1b5;white-space:nowrap}
+#recordBtn.recording{background:#7a2020;border-color:#ff7777;color:#fff}
+</style>
+
+<script type="importmap">
+{
+  "imports":{
+    "three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+
+<div id="c"></div>
+
+<div id="tel" class="p">
+<h4>TELEMETRY · recorded Gymnasium observation</h4>
+<div><span>Step / time</span><span id="t_step">–</span></div>
+<div><span>x (env-scaled)</span><span id="t_x">–</span></div>
+<div><span>offset from pad centre</span><span id="t_d">–</span></div>
+<div><span>y (env-scaled)</span><span id="t_y">–</span></div>
+<div><span>vx · vy (env-scaled)</span><span id="t_v">–</span></div>
+<div><span>angle</span><span id="t_a">–</span></div>
+<div><span>angular vel (env-scaled)</span><span id="t_w">–</span></div>
+<div><span>leg contact L · R</span><span><i class="leg" id="lg0"></i><i class="leg" id="lg1"></i></span></div>
+<div><span>action</span><span id="t_act">–</span></div>
+<div><span>step reward · return</span><span id="t_r">–</span></div>
+</div>
+
+<div id="top" class="p">
+<div id="badge" class="random">no replay loaded</div>
+<div id="meta"></div>
+<div id="out"></div>
+</div>
+
+<div id="note" class="p">
+3D view of Gymnasium's 2D Box2D physics, not a 3D physics simulation.
+</div>
+
+<div id="bar" class="p">
+
+<button id="play">▶</button>
+<button id="rst">⏮</button>
+<button id="prv">−1</button>
+<button id="nxt">+1</button>
+
+<input id="seek" type="range" min="0" max="1" step="1" value="0">
+
+<select id="spd">
+<option>0.25</option>
+<option>0.5</option>
+<option selected>1</option>
+<option>2</option>
+<option>4</option>
+</select>
+
+<button id="mF" class="on">Follow</button>
+<button id="mW">Wide</button>
+<button id="trl" class="on">Trail</button>
+
+<button id="loadDb">Load DB Episodes</button>
+<button id="recordBtn">⏺ Record from Episode 1</button>
+<button id="stopRecordBtn" disabled>⏹ Stop</button>
+<span id="recordStatus">Not recording</span>
+
+<select id="episodeSelect" title="Select PPO episode">
+<option value="">No episodes</option>
+</select>
+
+<button id="prevEp">Prev Ep</button>
+<button id="nextEp">Next Ep</button>
+
+<label>
+<input type="file" id="file" accept=".json" hidden>
+<button onclick="file.click()">Load JSON…</button>
+</label>
+
+</div>
+
+<script type="module">
+
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const $=id=>document.getElementById(id);
+
+const ACT=[
+ '0 · do nothing',
+ '1 · left orientation engine',
+ '2 · main engine',
+ '3 · right orientation engine'
+];
+
+const OUT={
+ landed_at_rest:['LANDED · at rest (+100)','#5ee69a'],
+ crashed:['CRASHED (−100)','#ff6b6b'],
+ out_of_bounds:['OUT OF BOUNDS (−100)','#ff6b6b'],
+ timeout:['TIME LIMIT (truncated)','#ffc94d']
+};
+
+const GLB='./assets/Apollo_Lunar_Module.glb';
+const MODEL_WIDTH_UNITS=1.97, FOOT_DROP=0.615;
+
+// =====================================================
+// DATABASE QUEUE CONFIGURATION
+// =====================================================
+
+const API_BASE='http://127.0.0.1:8001';
+
+let dbEpisodes=[];
+let queueIndex=-1;
+let autoQueue=false;
+let queueAdvancing=false;
+
+// Full browser-tab recording state.
+let screenStream=null;
+let mediaRecorder=null;
+let recordedChunks=[];
+let recordingInProgress=false;
+
+// =====================================================
+// ORIGINAL THREE.JS VISUALIZATION
+// =====================================================
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+
+$('c').appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x020308);
+
+const cam=new THREE.PerspectiveCamera(42,1,0.1,400);
+
+const ctl=new OrbitControls(cam,renderer.domElement);
+ctl.enableDamping=true;
+ctl.maxPolarAngle=Math.PI*0.52;
+
+scene.add(new THREE.HemisphereLight(0x9fb4d6,0x302a26,0.45));
+
+const sun=new THREE.DirectionalLight(0xfff1dc,3);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+
+Object.assign(sun.shadow.camera,{
+ left:-9,right:9,top:9,bottom:-9,near:1,far:60
+});
+
+sun.shadow.bias=-0.0005;
+sun.shadow.normalBias=0.02;
+
+scene.add(sun,sun.target);
+
+{
+ const n=900,p=new Float32Array(n*3);
+
+ for(let i=0;i<n;i++){
+  const u=Math.random()*6.283;
+  const v=Math.random()*1.3+0.05;
+  const r=180;
+
+  p.set([
+   r*Math.cos(u)*Math.cos(v),
+   r*Math.sin(v),
+   -r*Math.sin(u)*Math.cos(v)
+  ],i*3);
+ }
+
+ const g=new THREE.BufferGeometry();
+ g.setAttribute('position',new THREE.BufferAttribute(p,3));
+
+ scene.add(new THREE.Points(
+  g,
+  new THREE.PointsMaterial({
+   size:1.6,
+   sizeAttenuation:false,
+   color:0xffffff
+  })
+ ));
+}
+
+// ---- lander: original GLB and model positioning
+
+const pivot=new THREE.Group();
+const mroot=new THREE.Group();
+
+pivot.add(mroot);
+scene.add(pivot);
+
+const plumes={main:[],R:[],L:[]};
+let engineLight;
+
+function plume(len,rad,col,parent,pos,rotZ){
+ const g=new THREE.Group();
+
+ const mk=(s,c,o)=>{
+  const m=new THREE.Mesh(
+   new THREE.ConeGeometry(rad*s,len*s,16,1,true),
+   new THREE.MeshBasicMaterial({
+    color:c,
+    transparent:true,
+    opacity:o,
+    blending:THREE.AdditiveBlending,
+    depthWrite:false,
+    side:THREE.DoubleSide
+   })
+  );
+
+  m.rotation.x=Math.PI;
+  m.position.y=-len*s/2;
+
+  return m;
+ };
+
+ g.add(mk(1,col,.55),mk(.55,0xffffff,.8));
+ g.position.copy(pos);
+ g.rotation.z=rotZ;
+ g.visible=false;
+
+ parent.add(g);
+ return g;
+}
+
+const draco=new DRACOLoader().setDecoderPath(
+ 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/'
+);
+
+const modelReady=new GLTFLoader()
+ .setDRACOLoader(draco)
+ .loadAsync(GLB)
+ .then(gltf=>{
+
+  const m=gltf.scene;
+
+  m.traverse(o=>{
+   if(o.isMesh){
+    o.castShadow=o.receiveShadow=true;
+   }
+  });
+
+  // Original model materials and textures remain untouched.
+  const b=new THREE.Box3().setFromObject(m);
+  const c=b.getCenter(new THREE.Vector3());
+
+  m.position.set(-c.x,-b.min.y,-c.z);
+
+  const s=MODEL_WIDTH_UNITS/(b.max.x-b.min.x);
+
+  mroot.add(m);
+  mroot.scale.setScalar(s);
+  mroot.position.y=-FOOT_DROP;
+
+  const h=b.max.y-b.min.y;
+  const sy=0.62*h;
+
+  plumes.main.push(
+   plume(3.2,0.55,0xff9a3c,mroot,new THREE.Vector3(0,0.3,0),0)
+  );
+
+  for(const z of[-1.3,1.3]){
+   plumes.R.push(
+    plume(1.6,0.22,0x8fd0ff,mroot,new THREE.Vector3(1.4,sy,z),Math.PI/2)
+   );
+
+   plumes.L.push(
+    plume(1.6,0.22,0x8fd0ff,mroot,new THREE.Vector3(-1.4,sy,z),-Math.PI/2)
+   );
+  }
+
+  engineLight=new THREE.PointLight(0xff9a3c,0,6);
+  engineLight.position.set(0,-0.3,0);
+  pivot.add(engineLight);
+
+  pivot.userData.s=s;
+ });
+
+// =====================================================
+// ORIGINAL TERRAIN AND WORLD GENERATION
+// =====================================================
+
+let padC=0,padR=2,world=null,trail=null;
+let R=null,P=[],cum=[],t=0,playing=false,mode='follow';
+
+const sstep=(a,b,x)=>{
+ x=Math.min(1,Math.max(0,(x-a)/(b-a)));
+ return x*x*(3-2*x);
+};
+
+const nz=(x,z)=>
+ Math.sin(x*.9+Math.cos(z*.7)*2)*.5+
+ Math.sin(x*2.3-z*1.7)*.25+
+ Math.sin(z*.45+x*.31)*.6;
+
+function buildWorld(){
+
+ if(world)scene.remove(world);
+
+ world=new THREE.Group();
+
+ const C=R.constants;
+ const W=C.VIEWPORT_W/C.SCALE;
+
+ const pts=R.terrain.map(p=>[
+  p[0]-W/2,
+  p[1]-C.helipad_y
+ ]);
+
+ const prof=x=>{
+  if(x<=pts[0][0])return pts[0][1];
+
+  for(let i=1;i<pts.length;i++){
+   if(x<=pts[i][0]){
+    const a=pts[i-1],b=pts[i];
+
+    return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0]);
+   }
+  }
+
+  return pts[pts.length-1][1];
+ };
+
+ const g=new THREE.PlaneGeometry(90,70,360,140);
+ g.rotateX(-Math.PI/2);
+ g.translate(0,0,-20);
+
+ const pos=g.attributes.position;
+ const col=new Float32Array(pos.count*3);
+
+ for(let i=0;i<pos.count;i++){
+
+  const x=pos.getX(i);
+  const z=pos.getZ(i);
+  const n=nz(x,z);
+
+  const pf=prof(x);
+  let y;
+
+  if(z>=0){
+   y=pf-0.35*Math.max(0,z-2)+0.12*n*sstep(2,6,z);
+  }else{
+   const w=sstep(2,12,-z);
+   y=pf*(1-w)+(0.55*pf+0.2*-z+1.1*n)*w;
+  }
+
+  pos.setY(i,y);
+
+  const k=0.5+0.12*Math.sin(x*3.1+z*2.3)+0.1*n;
+
+  col.set([k*.62,k*.6,k*.57],i*3);
+ }
+
+ g.setAttribute('color',new THREE.BufferAttribute(col,3));
+ g.computeVertexNormals();
+
+ const ter=new THREE.Mesh(
+  g,
+  new THREE.MeshStandardMaterial({
+   vertexColors:true,
+   roughness:1,
+   metalness:0
+  })
+ );
+
+ ter.receiveShadow=true;
+ world.add(ter);
+
+ // Original landing pad.
+
+ const pr=(C.helipad_x2-C.helipad_x1)/2;
+ const cx=(C.helipad_x1+C.helipad_x2)/2-W/2;
+
+ const cv=document.createElement('canvas');
+ cv.width=cv.height=512;
+
+ const k=cv.getContext('2d');
+
+ k.fillStyle='#5b6068';
+ k.fillRect(0,0,512,512);
+ k.strokeStyle='#e8e8e8';
+ k.lineWidth=14;
+
+ for(const r of[240,170,100]){
+  k.beginPath();
+  k.arc(256,256,r,0,7);
+  k.stroke();
+ }
+
+ k.fillStyle='#e8e8e8';
+ k.fillRect(246,60,20,392);
+ k.fillRect(60,246,392,20);
+
+ const pad=new THREE.Mesh(
+  new THREE.CylinderGeometry(pr,pr,.6,64),
+  new THREE.MeshStandardMaterial({
+   color:0x444850,
+   roughness:.9
+  })
+ );
+
+ pad.position.set(cx,-.29,0);
+ pad.receiveShadow=pad.castShadow=true;
+
+ const top=new THREE.Mesh(
+  new THREE.CircleGeometry(pr*.98,64),
+  new THREE.MeshStandardMaterial({
+   map:Object.assign(
+    new THREE.CanvasTexture(cv),
+    {colorSpace:THREE.SRGBColorSpace}
+   ),
+   roughness:.9,
+   polygonOffset:true,
+   polygonOffsetFactor:-2
+  })
+ );
+
+ top.rotation.x=-Math.PI/2;
+ top.position.set(cx,.012,0);
+ top.receiveShadow=true;
+
+ world.add(pad,top);
+
+ // Original trajectory trail.
+
+ const n=R.obs.length;
+ const tp=new Float32Array(n*3);
+ const tc=new Float32Array(n*3);
+
+ P.forEach((p,i)=>{
+  tp.set([p[0],p[1],0],i*3);
+
+  const a=i?R.actions[i-1]:0;
+
+  tc.set(
+   a==2?[1,.6,.2]:a?[.4,.85,1]:[.8,.8,.85],
+   i*3
+  );
+ });
+
+ const tg=new THREE.BufferGeometry();
+
+ tg.setAttribute('position',new THREE.BufferAttribute(tp,3));
+ tg.setAttribute('color',new THREE.BufferAttribute(tc,3));
+
+ trail=new THREE.Line(
+  tg,
+  new THREE.LineBasicMaterial({vertexColors:true})
+ );
+
+ trail.frustumCulled=false;
+ trail.visible=$('trl').classList.contains('on');
+
+ world.add(trail);
+
+ const fin=P[P.length-1];
+ const on=Math.abs(fin[0]-cx)<=pr;
+
+ const ring=new THREE.Mesh(
+  new THREE.RingGeometry(1.1,1.2,48),
+  new THREE.MeshBasicMaterial({
+   color:on?0x5ee69a:0xffc94d,
+   transparent:true,
+   opacity:.9,
+   side:THREE.DoubleSide,
+   depthTest:false
+  })
+ );
+
+ ring.rotation.x=-Math.PI/2;
+ ring.position.set(fin[0],fin[1]-FOOT_DROP+.05,0);
+ ring.renderOrder=5;
+
+ world.add(ring);
+ scene.add(world);
+}
+
+// =====================================================
+// ORIGINAL REPLAY VISUALIZATION
+// =====================================================
+
+const lerp=(a,b,f)=>a+(b-a)*f;
+
+function load(j){
+
+ R=j;
+
+ const C=R.constants;
+ const W=C.VIEWPORT_W/C.SCALE;
+ const H=C.VIEWPORT_H/C.SCALE;
+
+ P=R.obs.map(o=>[
+  o[0]*W/2,
+  C.LEG_DOWN/C.SCALE+o[1]*H/2,
+  o[4]
+ ]);
+
+ padC=(C.helipad_x1+C.helipad_x2)/2-W/2;
+ padR=(C.helipad_x2-C.helipad_x1)/2;
+
+ cum=[0];
+
+ R.rewards.forEach(r=>
+  cum.push(cum[cum.length-1]+r)
+ );
+
+ const pol=R.policy||{};
+
+ $('badge').textContent=pol.label||'unlabelled policy';
+ $('badge').className=pol.type==='ppo'?'ppo':'random';
+
+ $('meta').innerHTML=
+  `${R.env_id} · seed ${R.seed} · ${R.steps} steps @ ${R.fps} fps<br>Gymnasium ${R.gymnasium_version}`+
+  (R.env_kwargs&&Object.keys(R.env_kwargs).length?
+   '<br>'+JSON.stringify(R.env_kwargs):'');
+
+ $('out').textContent='';
+ $('seek').max=R.actions.length;
+
+ t=0;
+ playing=false;
+ $('play').textContent='▶';
+
+ buildWorld();
+ seek(0);
+ setMode(mode);
+}
+
+function seek(v){
+ t=Math.min(Math.max(v,0),R.actions.length);
+ $('seek').value=t;
+ apply();
+}
+
+function apply(){
+
+ if(!R)return;
+
+ const N=R.actions.length;
+ const i=Math.min(Math.floor(t),N);
+ const f=i>=N?0:t-i;
+
+ const a=R.obs[i];
+ const b=R.obs[Math.min(i+1,N)];
+
+ const o=a.map((v,k)=>lerp(v,b[k],f));
+
+ const p0=P[i];
+ const p1=P[Math.min(i+1,N)];
+
+ pivot.position.set(
+  lerp(p0[0],p1[0],f),
+  lerp(p0[1],p1[1],f),
+  0
+ );
+
+ pivot.rotation.z=lerp(p0[2],p1[2],f);
+
+ const act=i<N&&playing?R.actions[i]:(i<N?R.actions[i]:0);
+
+ const fl=.8+Math.random()*.4;
+ const m=act==2,r=act==1,l=act==3;
+
+ plumes.main.forEach(g=>{
+  g.visible=m;
+  g.scale.set(1,fl,1);
+ });
+
+ plumes.R.forEach(g=>{
+  g.visible=r;
+  g.scale.set(1,fl,1);
+ });
+
+ plumes.L.forEach(g=>{
+  g.visible=l;
+  g.scale.set(1,fl,1);
+ });
+
+ if(engineLight)engineLight.intensity=m?18*fl:(r||l)?4:0;
+
+ if(trail)trail.geometry.setDrawRange(0,i+1);
+
+ $('t_step').textContent=`${i} / ${N} · ${(t/R.fps).toFixed(2)} s`;
+ $('t_x').textContent=o[0].toFixed(3);
+ $('t_y').textContent=o[1].toFixed(3);
+
+ {
+  const d=pivot.position.x-padC;
+
+  $('t_d').textContent=
+   (Math.abs(d)<=padR?'on pad · ':'')+
+   Math.abs(d).toFixed(2)+
+   (d<0?' left':' right');
+ }
+
+ $('t_v').textContent=`${o[2].toFixed(3)} · ${o[3].toFixed(3)}`;
+
+ $('t_a').textContent=
+  `${o[4].toFixed(3)} rad (${(o[4]*57.2958).toFixed(1)}°)`;
+
+ $('t_w').textContent=o[5].toFixed(3);
+
+ $('lg0').classList.toggle('on',o[6]>.5);
+ $('lg1').classList.toggle('on',o[7]>.5);
+
+ $('t_act').textContent=i<N?ACT[R.actions[i]]:'— (episode ended)';
+
+ $('t_r').textContent=
+  `${i?R.rewards[i-1].toFixed(2):'0.00'} · ${cum[i].toFixed(1)}`;
+
+ if(i>=N){
+
+  const [s,c]=OUT[R.outcome]||[R.outcome,'#fff'];
+
+  const d=P[N][0]-padC;
+  const on=Math.abs(d)<=padR;
+
+  $('out').innerHTML=
+   'Gymnasium outcome: '+s+
+   `<div style="font-size:13px;color:${on?'#5ee69a':'#ffc94d'}">Ended ${Math.abs(d).toFixed(2)} units ${d<0?'left':'right'} of pad centre — ${on?'ON':'OFF'} the pad (pad half-width ${padR})</div>`;
+
+  $('out').style.color=c;
+
+ }else{
+  $('out').textContent='';
+ }
+}
+
+function follow(k){
+
+ if(!R||!pivot)return;
+
+ const tg=pivot.position;
+
+ if(mode==='follow'){
+  const d=tg.clone()
+   .add(new THREE.Vector3(0,-.7,0))
+   .sub(ctl.target)
+   .multiplyScalar(k);
+
+  ctl.target.add(d);
+  cam.position.add(d);
+ }
+}
+
+function setMode(m){
+
+ mode=m;
+
+ $('mF').classList.toggle('on',m=='follow');
+ $('mW').classList.toggle('on',m=='wide');
+
+ if(m==='wide'){
+  ctl.target.set(0,4.5,0);
+  cam.position.set(2,7,25);
+ }else{
+  ctl.target.copy(pivot.position).y-=.7;
+  cam.position.copy(pivot.position)
+   .add(new THREE.Vector3(2.5,1.5,8.5));
+ }
+}
+
+// =====================================================
+// DATABASE REPLAY NORMALIZATION
+// =====================================================
+
+function parseStoredJSON(value){
+
+ if(typeof value!=='string')return value;
+
+ try{
+  return JSON.parse(value);
+ }catch{
+  return value;
+ }
+}
+
+function normalizeReplay(payload,summary={}){
+
+ let j=payload.replay||payload.episode||payload;
+
+ if(typeof j==='string'){
+  j=JSON.parse(j);
+ }
+
+ if(!j||typeof j!=='object'){
+  throw new Error('Invalid replay returned by API');
+ }
+
+ const metadata=parseStoredJSON(j.metadata)||{};
+
+ const obs=parseStoredJSON(
+  j.obs??j.observations??metadata.obs??metadata.observations
+ );
+
+ const actions=parseStoredJSON(
+  j.actions??metadata.actions
+ );
+
+ const rewards=parseStoredJSON(
+  j.rewards??metadata.rewards
+ );
+
+ const terrain=parseStoredJSON(
+  j.terrain??metadata.terrain
+ );
+
+ const constants=parseStoredJSON(
+  j.constants??metadata.constants
+ );
+
+ if(!Array.isArray(obs)||
+    !Array.isArray(actions)||
+    !Array.isArray(rewards)){
+  throw new Error(
+   'Database replay must contain observations, actions and rewards'
+  );
+ }
+
+ if(!Array.isArray(terrain)||!constants){
+  throw new Error(
+   'Database replay is missing terrain or Gymnasium constants'
+  );
+ }
+
+ if(obs.length!==actions.length+1){
+  throw new Error(
+   `Trajectory alignment error: ${obs.length} observations and ${actions.length} actions`
+  );
+ }
+
+ if(rewards.length!==actions.length){
+  throw new Error(
+   `Reward alignment error: ${rewards.length} rewards and ${actions.length} actions`
+  );
+ }
+
+ let policy=parseStoredJSON(
+  j.policy??metadata.policy
+ );
+
+ if(!policy||typeof policy!=='object'){
+  policy={
+   type:'ppo',
+   label:String(policy||'PPO trained policy')
+  };
+ }
+
+ // These recordings are selected by their PPO filename.
+ policy.type='ppo';
+
+ if(!policy.label){
+  policy.label='PPO trained policy';
+ }
+
+ let outcome=String(
+  j.outcome??metadata.outcome??summary.outcome??'unknown'
+ ).toLowerCase();
+
+ if(outcome==='landed'){
+  outcome='landed_at_rest';
+ }
+
+ if(outcome==='truncated'){
+  outcome='timeout';
+ }
+
+ return {
+  ...j,
+  obs,
+  actions,
+  rewards,
+  terrain,
+  constants,
+  metadata,
+  policy,
+  outcome,
+  env_id:j.env_id??metadata.env_id??'LunarLander-v3',
+  seed:j.seed??metadata.seed??summary.seed,
+  steps:j.steps??j.total_steps??summary.total_steps??actions.length,
+  fps:Number(j.fps??metadata.fps??50),
+  gymnasium_version:
+   j.gymnasium_version??metadata.gymnasium_version??'1.4.0',
+  env_kwargs:j.env_kwargs??metadata.env_kwargs??{}
+ };
+}
+
+// =====================================================
+// DATABASE QUEUE
+// =====================================================
+
+function setQueueStatus(message){
+ $('meta').textContent=message;
+}
+
+async function fetchEpisodeList(){
+
+ const response=await fetch(`${API_BASE}/api/episodes`);
+
+ if(!response.ok){
+  throw new Error(`Episode API returned HTTP ${response.status}`);
+ }
+
+ const data=await response.json();
+
+ if(!Array.isArray(data)){
+  throw new Error('API episode response is not an array');
+ }
+
+ return data;
+}
+
+async function fetchEpisodeReplay(ep){
+
+ const response=await fetch(
+  `${API_BASE}/api/episodes/${ep.episode_id}/replay`
+ );
+
+ if(!response.ok){
+  throw new Error(
+   `Episode ${ep.episode_id} returned HTTP ${response.status}`
+  );
+ }
+
+ return await response.json();
+}
+
+async function loadQueueEpisode(index,autoplay=false){
+
+ if(index<0||index>=dbEpisodes.length)return;
+
+ // Stop the previous playback while fetching the next replay.
+ playing=false;
+ $('play').textContent='▶';
+
+ const ep=dbEpisodes[index];
+
+ setQueueStatus(
+  `Loading PPO episode ${index+1}/${dbEpisodes.length}...`
+ );
+
+ const payload=await fetchEpisodeReplay(ep);
+ const replay=normalizeReplay(payload,ep);
+
+ // Preserve the existing visualization load function.
+ load(replay);
+
+ queueIndex=index;
+ $('episodeSelect').value=String(index);
+
+ $('meta').innerHTML=
+  `PPO DATABASE QUEUE · ${index+1}/${dbEpisodes.length}<br>`+
+  `${ep.episode_name} · Seed ${ep.seed}`;
+
+ if(autoplay){
+  autoQueue=true;
+  playing=true;
+  $('play').textContent='⏸';
+ }else{
+  autoQueue=false;
+  playing=false;
+  $('play').textContent='▶';
+ }
+}
+
+async function loadDbEpisodes(){
+
+ if($('loadDb').disabled||recordingInProgress)return;
+
+ $('loadDb').disabled=true;
+ autoQueue=false;
+ playing=false;
+
+ try{
+
+  setQueueStatus('Connecting to replay API...');
+
+  const records=await fetchEpisodeList();
+
+  // Strictly select the 100 PPO evaluation episodes.
+  dbEpisodes=records.filter(ep=>
+   typeof ep.episode_name==='string'&&
+   ep.episode_name.startsWith('ppo_eval_seed')
+  );
+
+  dbEpisodes.sort((a,b)=>Number(a.seed)-Number(b.seed));
+
+  if(dbEpisodes.length===0){
+   throw new Error(
+    'No PPO evaluation episodes found in the database.'
+   );
+  }
+
+  // Warn rather than silently assuming all 100 exist.
+  if(dbEpisodes.length!==100){
+   console.warn(
+    `Expected 100 PPO episodes, found ${dbEpisodes.length}`
+   );
+  }
+
+  const select=$('episodeSelect');
+  select.innerHTML='';
+
+  dbEpisodes.forEach((ep,index)=>{
+
+   const option=document.createElement('option');
+
+   option.value=String(index);
+
+   option.textContent=
+    `#${index+1} · Seed ${ep.seed} · ${ep.outcome}`;
+
+   select.appendChild(option);
+  });
+
+  await loadQueueEpisode(0,false);
+
+  setQueueStatus(
+   `PPO DATABASE QUEUE · ${dbEpisodes.length} episodes loaded`
+  );
+
+  console.log('PPO database episodes:',dbEpisodes);
+
+ }catch(error){
+
+  console.error('Database loading failed:',error);
+
+  setQueueStatus('Database error: '+error.message);
+
+  alert(
+   'Could not load PPO episodes:\n\n'+error.message
+  );
+
+ }finally{
+  $('loadDb').disabled=false;
+ }
+}
+
+async function advanceQueue(){
+
+ if(queueAdvancing)return;
+
+ queueAdvancing=true;
+
+ if(queueIndex+1>=dbEpisodes.length){
+
+  autoQueue=false;
+  playing=false;
+  queueAdvancing=false;
+
+  $('play').textContent='▶';
+
+  setQueueStatus(
+   `ALL ${dbEpisodes.length} PPO EPISODES COMPLETED`
+  );
+
+  if(mediaRecorder&&mediaRecorder.state==='recording'){
+   setRecordingStatus('All episodes completed · Saving video...');
+   mediaRecorder.stop();
+  }
+
+  return;
+ }
+
+ try{
+
+  await loadQueueEpisode(queueIndex+1,true);
+
+ }catch(error){
+
+  autoQueue=false;
+  playing=false;
+
+  $('play').textContent='▶';
+
+  console.error('Automatic queue advancement failed:',error);
+
+  setQueueStatus('Playback error: '+error.message);
+
+  alert(error.message);
+
+ }finally{
+  queueAdvancing=false;
+ }
+}
+
+// =====================================================
+// FULL VISUALIZATION VIDEO RECORDING
+// =====================================================
+
+function setRecordingStatus(message){
+ $('recordStatus').textContent=message;
+}
+
+function downloadRecording(blob){
+ const url=URL.createObjectURL(blob);
+ const link=document.createElement('a');
+ const timestamp=new Date().toISOString().replace(/[:.]/g,'-');
+ link.href=url;
+ link.download=`Apollo_Lunar_Lander_Episodes_1-100_${timestamp}.webm`;
+ document.body.appendChild(link);
+ link.click();
+ link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+async function startFullRecording(){
+ if(recordingInProgress)return;
+ if(!dbEpisodes.length){
+  alert('First click Load DB Episodes and wait for the episode list.');
+  return;
+ }
+ if(!navigator.mediaDevices?.getDisplayMedia||!window.MediaRecorder){
+  alert('This browser does not support tab recording. Use a recent Chrome version.');
+  return;
+ }
+
+ $('recordBtn').disabled=true;
+ setRecordingStatus('Preparing Episode 1...');
+ playing=false;
+ autoQueue=false;
+ $('play').textContent='▶';
+
+ try{
+  // Load Episode 1 at its first frame before asking Chrome to record.
+  await loadQueueEpisode(0,false);
+  seek(0);
+  await modelReady;
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+
+  // Select the Apollo viewer tab in Chrome's sharing popup.
+  screenStream=await navigator.mediaDevices.getDisplayMedia({
+   video:{frameRate:{ideal:30,max:60},displaySurface:'browser'},
+   audio:false,
+   preferCurrentTab:true
+  });
+
+  recordedChunks=[];
+  const mimeType=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+   ?'video/webm;codecs=vp9'
+   :'video/webm';
+
+  mediaRecorder=new MediaRecorder(screenStream,{
+   mimeType,
+   videoBitsPerSecond:8000000
+  });
+
+  mediaRecorder.ondataavailable=event=>{
+   if(event.data&&event.data.size>0)recordedChunks.push(event.data);
+  };
+
+  mediaRecorder.onerror=event=>{
+   console.error('MediaRecorder error:',event.error||event);
+   setRecordingStatus('Recording error');
+  };
+
+  mediaRecorder.onstop=()=>{
+   const blob=new Blob(recordedChunks,{type:mimeType});
+   if(blob.size>0){
+    downloadRecording(blob);
+    setRecordingStatus(`Saved ${(blob.size/1048576).toFixed(1)} MB`);
+   }else{
+    setRecordingStatus('No video data was captured');
+   }
+
+   screenStream?.getTracks().forEach(track=>track.stop());
+   screenStream=null;
+   mediaRecorder=null;
+   recordingInProgress=false;
+   $('recordBtn').disabled=false;
+   $('recordBtn').classList.remove('recording');
+   $('recordBtn').textContent='⏺ Record from Episode 1';
+   $('stopRecordBtn').disabled=true;
+  };
+
+  // If sharing is stopped using Chrome's sharing indicator, save what was captured.
+  screenStream.getVideoTracks()[0].addEventListener('ended',()=>{
+   if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
+  },{once:true});
+
+  mediaRecorder.start(1000);
+  recordingInProgress=true;
+  $('recordBtn').classList.add('recording');
+  $('recordBtn').textContent='● Recording';
+  $('stopRecordBtn').disabled=false;
+  setRecordingStatus(`Recording Episode 1/${dbEpisodes.length}`);
+
+  // Start playback only after recording has actually started.
+  queueIndex=0;
+  autoQueue=true;
+  playing=true;
+  $('play').textContent='⏸';
+
+ }catch(error){
+  console.error('Could not start full recording:',error);
+  setRecordingStatus('Recording did not start');
+  screenStream?.getTracks().forEach(track=>track.stop());
+  screenStream=null;
+  if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();
+  else{
+   recordingInProgress=false;
+   $('recordBtn').disabled=false;
+  }
+  alert('Could not start recording:\n'+error.message);
+ }
+}
+
+function stopFullRecording(){
+ playing=false;
+ autoQueue=false;
+ $('play').textContent='▶';
+ if(mediaRecorder&&mediaRecorder.state==='recording'){
+  setRecordingStatus('Finalizing video...');
+  mediaRecorder.stop();
+ }
+}
+
+$('recordBtn').addEventListener('click',startFullRecording);
+$('stopRecordBtn').addEventListener('click',stopFullRecording);
+
+// =====================================================
+// PLAYBACK CONTROLS
+// =====================================================
+
+$('play').onclick=async()=>{
+
+ if(!R)return;
+
+ if(playing){
+
+  // Pause without resetting episode or queue position.
+  playing=false;
+  $('play').textContent='▶';
+  return;
+ }
+
+ // If current episode ended, move to the next DB episode.
+ if(t>=R.actions.length){
+
+  if(queueIndex>=0&&queueIndex<dbEpisodes.length-1){
+
+   try{
+    await loadQueueEpisode(queueIndex+1,true);
+   }catch(error){
+    alert(error.message);
+   }
+
+   return;
+  }
+
+  // If this is the last episode, restart the current one.
+  seek(0);
+ }
+
+ autoQueue=queueIndex>=0&&dbEpisodes.length>0;
+
+ playing=true;
+ $('play').textContent='⏸';
+};
+
+$('rst').onclick=()=>{
+ if(!R)return;
+
+ playing=false;
+ $('play').textContent='▶';
+ seek(0);
+};
+
+$('prv').onclick=()=>{
+ if(!R)return;
+
+ playing=false;
+ $('play').textContent='▶';
+ seek(Math.round(t)-1);
+};
+
+$('nxt').onclick=()=>{
+ if(!R)return;
+
+ playing=false;
+ $('play').textContent='▶';
+ seek(Math.round(t)+1);
+};
+
+$('seek').oninput=e=>{
+
+ playing=false;
+ $('play').textContent='▶';
+
+ seek(+e.target.value);
+};
+
+$('mF').onclick=()=>setMode('follow');
+$('mW').onclick=()=>setMode('wide');
+
+$('trl').onclick=e=>{
+
+ e.target.classList.toggle('on');
+
+ if(trail){
+  trail.visible=e.target.classList.contains('on');
+ }
+};
+
+// =====================================================
+// EPISODE NAVIGATION
+// =====================================================
+
+$('loadDb').onclick=loadDbEpisodes;
+
+$('episodeSelect').onchange=async e=>{
+
+ const index=Number(e.target.value);
+
+ if(!Number.isInteger(index))return;
+
+ try{
+  await loadQueueEpisode(index,false);
+ }catch(error){
+  console.error(error);
+  alert(error.message);
+ }
+};
+
+$('prevEp').onclick=async()=>{
+
+ if(queueIndex<=0)return;
+
+ try{
+  await loadQueueEpisode(queueIndex-1,false);
+ }catch(error){
+  alert(error.message);
+ }
+};
+
+$('nextEp').onclick=async()=>{
+
+ if(queueIndex<0||queueIndex>=dbEpisodes.length-1)return;
+
+ try{
+  await loadQueueEpisode(queueIndex+1,false);
+ }catch(error){
+  alert(error.message);
+ }
+};
+
+// =====================================================
+// KEYBOARD CONTROLS AND MANUAL JSON LOADING
+// =====================================================
+
+addEventListener('keydown',e=>{
+
+ if(e.code==='Space'){
+  e.preventDefault();
+  $('play').click();
+
+ }else if(e.code==='ArrowRight'){
+  $('nxt').click();
+
+ }else if(e.code==='ArrowLeft'){
+  $('prv').click();
+ }
+});
+
+const readFile=f=>{
+
+ if(!f)return;
+
+ // Manual file replay is independent of the DB queue.
+ autoQueue=false;
+ playing=false;
+ $('play').textContent='▶';
+
+ f.text().then(s=>{
+
+  const replay=normalizeReplay(JSON.parse(s));
+
+  queueIndex=-1;
+  $('episodeSelect').value='';
+
+  load(replay);
+
+ }).catch(error=>{
+  console.error(error);
+  alert('Could not load JSON: '+error.message);
+ });
+};
+
+$('file').onchange=e=>readFile(e.target.files[0]);
+
+addEventListener('dragover',e=>e.preventDefault());
+
+addEventListener('drop',e=>{
+
+ e.preventDefault();
+
+ if(e.dataTransfer.files.length){
+  readFile(e.dataTransfer.files[0]);
+ }
+});
+
+// =====================================================
+// ORIGINAL RESIZE AND RENDER LOOP
+// =====================================================
+
+function resize(){
+
+ renderer.setSize(innerWidth,innerHeight);
+
+ cam.aspect=innerWidth/innerHeight;
+ cam.updateProjectionMatrix();
+}
+
+addEventListener('resize',resize);
+resize();
+
+const clock=new THREE.Clock();
+
+renderer.setAnimationLoop(()=>{
+
+ const dt=Math.min(clock.getDelta(),.1);
+
+ if(R&&playing){
+
+  t+=dt*R.fps*parseFloat($('spd').value);
+
+  if(t>=R.actions.length){
+
+   t=R.actions.length;
+
+   $('seek').value=t;
+   apply();
+
+   // Automatically advance to the next database episode.
+   if(autoQueue&&queueIndex>=0){
+    advanceQueue();
+   }else{
+
+    playing=false;
+    $('play').textContent='▶';
+   }
+
+  }else{
+
+   $('seek').value=t;
+   apply();
+  }
+ }
+
+ follow(1-Math.exp(-dt*5));
+
+ sun.position.copy(pivot.position)
+  .add(new THREE.Vector3(-10,16,12));
+
+ sun.target.position.copy(pivot.position);
+
+ ctl.update();
+ renderer.render(scene,cam);
+});
+
+cam.position.set(3,6,20);
+ctl.target.set(0,4,0);
+
+// =====================================================
+// INITIALIZATION
+// =====================================================
+
+// No random replay is automatically loaded anymore.
+// Wait for the user to load the PPO database queue.
+
+modelReady.then(()=>{
+
+ setQueueStatus(
+  'Apollo model ready · Click Load DB Episodes'
+ );
+
+}).catch(error=>{
+
+ console.error('Apollo model loading failed:',error);
+
+ setQueueStatus('Apollo model failed to load');
+});
+
+window.lm={
+ seek,
+ load,
+ get t(){return t},
+ get queueIndex(){return queueIndex},
+ get episodeCount(){return dbEpisodes.length}
+};
+
+</script>
+</body>
+</html>

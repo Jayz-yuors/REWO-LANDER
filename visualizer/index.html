@@ -1,0 +1,748 @@
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080d18" />
+
+    <title>ROCKET LAB // Lunar Landing Replay</title>
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080d18;
+        --panel: #0e1727;
+        --panel-light: #121f32;
+        --border: #24334a;
+        --text: #e7eefb;
+        --muted: #8293ad;
+        --cyan: #54e4ff;
+        --green: #6ef0b4;
+        --orange: #ffb86b;
+        --red: #ff6f7d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        background:
+          radial-gradient(ellipse at 20% 0%, #13223b 0%, transparent 42%),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+
+      button,
+      select {
+        color: var(--text);
+        background: #111e31;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      button {
+        min-height: 40px;
+        padding: 9px 13px;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+      }
+
+      button:hover:not(:disabled),
+      select:hover {
+        border-color: var(--cyan);
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      button.primary {
+        background: #0c3b4b;
+        border-color: #16768b;
+        color: #aaf4ff;
+      }
+
+      .topbar {
+        min-height: 70px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 15px 24px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(8, 13, 24, 0.85);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border: 1px solid var(--cyan);
+        border-radius: 10px;
+        color: var(--cyan);
+        font-weight: 900;
+        font-size: 22px;
+      }
+
+      .brand strong,
+      .brand small {
+        display: block;
+      }
+
+      .brand strong {
+        font-size: 14px;
+        letter-spacing: 0.16em;
+      }
+
+      .brand small,
+      .status,
+      .eyebrow,
+      .viewport-footer,
+      .panel-title,
+      .metric small,
+      .two-col small,
+      .footnote,
+      .speed-label,
+      .contacts,
+      .reward-line,
+      .small-note {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono",
+          monospace;
+        letter-spacing: 0.06em;
+      }
+
+      .brand small {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: #b7c5dc;
+        font-size: 10px;
+      }
+
+      .pulse {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 12px #6ef0b488;
+      }
+
+      .divider {
+        width: 1px;
+        height: 15px;
+        background: var(--border);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 365px;
+        gap: 16px;
+        padding: 16px;
+        max-width: 1800px;
+        margin: 0 auto;
+      }
+
+      .viewport-panel,
+      .panel {
+        background: rgba(14, 23, 39, 0.92);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .viewport-panel {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .viewport-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 19px 20px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .eyebrow {
+        color: var(--cyan);
+        font-size: 10px;
+      }
+
+      h1 {
+        margin: 5px 0 0;
+        font-size: clamp(20px, 2.4vw, 29px);
+        font-weight: 650;
+        letter-spacing: -0.04em;
+      }
+
+      .mission-chip {
+        border: 1px solid #36516c;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+      }
+
+      .mission-chip span {
+        color: var(--cyan);
+        margin-left: 5px;
+      }
+
+      #scene {
+        position: relative;
+        min-height: 400px;
+        height: min(70vh, 780px);
+        background:
+          radial-gradient(ellipse at 50% 45%, #152742 0%, #080d18 68%);
+        overflow: hidden;
+      }
+
+      #scene canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .viewport-footer {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 16px;
+        color: var(--muted);
+        font-size: 9px;
+        border-top: 1px solid var(--border);
+      }
+
+      #sceneStatus {
+        color: var(--cyan);
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+
+      .panel-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 15px;
+        color: #d9e6f8;
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .panel-title span {
+        color: var(--muted);
+        font-size: 9px;
+        font-weight: 400;
+      }
+
+      .mission-title {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+      }
+
+      .big-step {
+        margin: 8px 0 13px;
+        font-size: 36px;
+        font-weight: 750;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.05em;
+      }
+
+      .big-step small {
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+      }
+
+      .progress-track {
+        height: 5px;
+        background: #1c2a40;
+        border-radius: 20px;
+        overflow: hidden;
+        margin-bottom: 17px;
+      }
+
+      #progressBar {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, #32b8d5, var(--cyan));
+        transition: width 0.08s linear;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .two-col small,
+      .two-col strong {
+        display: block;
+      }
+
+      .two-col small {
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .two-col strong {
+        margin-top: 7px;
+        font-size: 17px;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+      }
+
+      .telemetry-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 9px;
+      }
+
+      .metric {
+        min-width: 0;
+        padding: 11px;
+        border: 1px solid #1f3048;
+        border-radius: 8px;
+        background: #0a1322;
+      }
+
+      .metric small {
+        display: block;
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 18px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .metric em {
+        display: block;
+        margin-top: 4px;
+        color: #657894;
+        font-size: 9px;
+        font-style: normal;
+      }
+
+      .contacts {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .contacts b {
+        margin-left: 4px;
+        color: var(--orange);
+      }
+
+      .action-name {
+        font-size: 19px;
+        font-weight: 750;
+        letter-spacing: 0.03em;
+      }
+
+      .thruster-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-around;
+        gap: 12px;
+        margin: 17px 0;
+      }
+
+      .thruster {
+        display: grid;
+        place-items: center;
+        min-width: 44px;
+        min-height: 35px;
+        padding: 6px;
+        border: 1px solid #34435b;
+        border-radius: 8px;
+        color: #6e819d;
+        font-family: monospace;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .thruster.active {
+        border-color: var(--orange);
+        color: #fff0d7;
+        background: #713d1b66;
+        box-shadow: 0 0 14px #ffb86b22;
+      }
+
+      .reward-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .reward-line strong {
+        color: var(--green);
+        font-size: 13px;
+      }
+
+      .episode-picker {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 7px;
+        margin-bottom: 14px;
+      }
+
+      .episode-picker label {
+        color: var(--muted);
+        font-family: monospace;
+        font-size: 9px;
+        letter-spacing: 0.08em;
+      }
+
+      .episode-picker select {
+        width: 100%;
+        min-height: 40px;
+        padding: 9px;
+        outline: none;
+      }
+
+      .buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .speed-label {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 18px 0 9px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .speed-label strong {
+        color: var(--cyan);
+      }
+
+      input[type="range"] {
+        display: block;
+        width: 100%;
+        accent-color: var(--cyan);
+        cursor: pointer;
+      }
+
+      .small-note {
+        margin-top: 13px;
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.7;
+        overflow-wrap: anywhere;
+      }
+
+      .footnote {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 14px 22px 20px;
+        color: #647590;
+        font-size: 9px;
+      }
+
+      @media (max-width: 1050px) {
+        .layout {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .sidebar {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          align-items: start;
+        }
+
+        #scene {
+          height: 60vh;
+        }
+      }
+
+      @media (max-width: 650px) {
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 14px;
+        }
+
+        .status {
+          flex-wrap: wrap;
+        }
+
+        .layout {
+          padding: 10px;
+          gap: 10px;
+        }
+
+        .sidebar {
+          display: flex;
+        }
+
+        .viewport-heading {
+          padding: 14px;
+        }
+
+        #scene {
+          min-height: 320px;
+          height: 52vh;
+        }
+
+        .mission-chip {
+          font-size: 8px;
+        }
+
+        .footnote {
+          padding: 12px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">R</span>
+          <div>
+            <strong>ROCKET LAB</strong>
+            <small>MISSION SIMULATION / 001</small>
+          </div>
+        </div>
+
+        <div class="status">
+          <span class="pulse"></span>
+          REPLAY MODE
+          <span class="divider"></span>
+          GYMNASIUM / BOX2D
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="viewport-panel">
+          <div class="viewport-heading">
+            <div>
+              <span class="eyebrow">LIVE VIEWPORT</span>
+              <h1>Lunar descent</h1>
+            </div>
+
+            <div class="mission-chip">
+              APOLLO LM <span>3D VIEW</span>
+            </div>
+          </div>
+
+          <div id="scene" aria-label="3D lunar lander replay"></div>
+
+          <div class="viewport-footer">
+            <span>DRAG TO ORBIT · SCROLL TO ZOOM</span>
+            <span id="sceneStatus">LOADING MODEL...</span>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel mission-panel">
+            <span class="eyebrow">MISSION CONTROL</span>
+
+            <div class="mission-title">LANDING SEQUENCE</div>
+
+            <div class="big-step">
+              <span id="stepReadout">0000</span>
+              <small>STEPS</small>
+            </div>
+
+            <div class="progress-track">
+              <div id="progressBar"></div>
+            </div>
+
+            <div class="two-col">
+              <div>
+                <small>EPISODE RETURN</small>
+                <strong id="returnReadout">0.00</strong>
+              </div>
+
+              <div>
+                <small>POLICY</small>
+                <strong id="policyReadout">—</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              FLIGHT TELEMETRY
+              <span>OBSERVATION</span>
+            </div>
+
+            <div class="telemetry-grid">
+              <div class="metric">
+                <small>HORIZONTAL X</small>
+                <strong id="xVal">0.000</strong>
+              </div>
+
+              <div class="metric">
+                <small>VERTICAL Y</small>
+                <strong id="yVal">0.000</strong>
+              </div>
+
+              <div class="metric">
+                <small>X VELOCITY</small>
+                <strong id="vxVal">0.000</strong>
+                <em>env units</em>
+              </div>
+
+              <div class="metric">
+                <small>Y VELOCITY</small>
+                <strong id="vyVal">0.000</strong>
+                <em>env units</em>
+              </div>
+
+              <div class="metric">
+                <small>ANGLE</small>
+                <strong id="angleVal">0.000</strong>
+                <em>radians</em>
+              </div>
+
+              <div class="metric">
+                <small>ANGULAR RATE</small>
+                <strong id="angVelVal">0.000</strong>
+                <em>env units</em>
+              </div>
+            </div>
+
+            <div class="contacts">
+              <span>LEFT LEG <b id="leftContact">NO</b></span>
+              <span>RIGHT LEG <b id="rightContact">NO</b></span>
+            </div>
+          </section>
+
+          <section class="panel action-panel">
+            <div class="panel-title">
+              THRUSTER COMMAND
+              <span id="actionNumber">ACTION 0</span>
+            </div>
+
+            <div class="action-name" id="actionName">NO THRUST</div>
+
+            <div class="thruster-row">
+              <span class="thruster" id="leftThruster">L</span>
+              <span class="thruster" id="mainThruster">MAIN</span>
+              <span class="thruster" id="rightThruster">R</span>
+            </div>
+
+            <div class="reward-line">
+              <span>STEP REWARD</span>
+              <strong id="rewardReadout">0.000</strong>
+            </div>
+          </section>
+
+          <section class="panel controls-panel">
+            <div class="panel-title">PLAYBACK CONTROLS</div>
+
+            <div class="episode-picker">
+              <label for="episodeSelect">SELECT RECORDED EPISODE</label>
+
+              <select id="episodeSelect" disabled>
+                <option value="0">Waiting for replay data…</option>
+              </select>
+            </div>
+
+            <div class="buttons">
+              <button id="playBtn" class="primary" disabled>
+                ▶ PLAY
+              </button>
+
+              <button id="restartBtn" disabled>
+                ↺ RESTART
+              </button>
+            </div>
+
+            <label class="speed-label" for="speedRange">
+              <span>PLAYBACK SPEED</span>
+              <strong id="speedLabel">1.0×</strong>
+            </label>
+
+            <input
+              id="speedRange"
+              type="range"
+              min="0.25"
+              max="4"
+              step="0.25"
+              value="1"
+            />
+
+            <div class="small-note" id="episodeStatus">
+              Waiting for trajectory data…
+            </div>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="footnote">
+        <span>PHYSICS SOURCE: GYMNASIUM LUNARLANDER-V3</span>
+        <span>3D VIEW IS A VISUAL REPLAY — NOT 3D PHYSICS</span>
+      </footer>
+    </div>
+
+    <!--
+      This is a Vite entry point.
+      Multi-episode selection and playback data should be handled in src/main.js.
+    -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
